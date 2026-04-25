@@ -21,6 +21,6 @@
     "lokijs": "^1.5.12",
     "node-telegram-bot-api": "^0.67.0",
     "qrcode-terminal": "^0.12.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.32.6"
   }
 }
