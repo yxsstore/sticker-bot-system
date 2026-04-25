@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { getStickerByCode } = require('./database');
 
-async function initWhatsAppBot(db) {
-    // Importação dinâmica para contornar erro de ESM
+async function initWhatsAppBot(db, handlers = {}) {
     const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = await import('@whiskeysockets/baileys');
     const { Boom } = await import('@hapi/boom');
 
@@ -22,18 +21,20 @@ async function initWhatsAppBot(db) {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('Escaneie o QR Code abaixo para conectar o WhatsApp:');
+            if (handlers.onQR) handlers.onQR(qr);
             qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
+            if (handlers.onDisconnected) handlers.onDisconnected();
             const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
                 lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            console.log('Conexão fechada, reconectando:', shouldReconnect);
+            
             if (shouldReconnect) {
-                initWhatsAppBot(db);
+                initWhatsAppBot(db, handlers);
             }
         } else if (connection === 'open') {
+            if (handlers.onConnected) handlers.onConnected();
             console.log('Conexão com WhatsApp aberta com sucesso!');
         }
     });
@@ -51,23 +52,19 @@ async function initWhatsAppBot(db) {
         
         if (codeMatch) {
             const code = codeMatch[0];
-            console.log(`Código recebido: ${code} de ${remoteJid}`);
-
             try {
                 const stickerData = await getStickerByCode(db, code);
-
                 if (stickerData && fs.existsSync(stickerData.file_path)) {
                     await sock.sendMessage(remoteJid, { 
                         sticker: fs.readFileSync(stickerData.file_path) 
                     });
-                    console.log(`Figurinha enviada para ${code}`);
                 } else {
                     await sock.sendMessage(remoteJid, { 
                         text: '❌ Código não encontrado ou figurinha expirada.' 
                     });
                 }
             } catch (error) {
-                console.error('Erro ao enviar figurinha no WhatsApp:', error);
+                console.error('Erro ao enviar figurinha:', error);
             }
         }
     });
