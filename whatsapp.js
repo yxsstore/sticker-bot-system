@@ -4,15 +4,31 @@ const path = require('path');
 const { getStickerByCode } = require('./database');
 
 async function initWhatsAppBot(db, handlers = {}) {
-    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = await import('@whiskeysockets/baileys');
+    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = await import('@whiskeysockets/baileys');
     const { Boom } = await import('@hapi/boom');
 
-    const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'data', 'auth_info_baileys'));
+    const authPath = path.join(__dirname, 'data', 'auth_info_baileys');
+    
+    // Função para limpar sessão em caso de erro crítico
+    const clearSession = () => {
+        if (fs.existsSync(authPath)) {
+            console.log('Limpando sessão antiga para gerar novo QR Code...');
+            fs.rmSync(authPath, { recursive: true, force: true });
+        }
+    };
+
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    const { version } = await fetchLatestBaileysVersion();
+
+    console.log(`Usando versão do WhatsApp Web: ${version.join('.')}`);
 
     const sock = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: true,
-        browser: ['StickerBot', 'Chrome', '1.0.0']
+        browser: ['Ubuntu', 'Chrome', '110.0.5481.177'], // Browser mais comum para evitar bloqueios
+        syncFullHistory: false,
+        markOnlineOnConnect: true
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -23,19 +39,30 @@ async function initWhatsAppBot(db, handlers = {}) {
         if (qr) {
             if (handlers.onQR) handlers.onQR(qr);
             qrcode.generate(qr, { small: true });
+            console.log('QR Code gerado com sucesso.');
         }
 
         if (connection === 'close') {
-            if (handlers.onDisconnected) handlers.onDisconnected();
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
-                lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
+            const statusCode = (lastDisconnect?.error instanceof Boom) ? 
+                lastDisconnect.error.output.statusCode : 0;
             
-            if (shouldReconnect) {
-                initWhatsAppBot(db, handlers);
+            console.log('Conexão fechada. Status:', statusCode);
+
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+                console.log('Sessão inválida ou deslogada. Resetando...');
+                if (handlers.onDisconnected) handlers.onDisconnected('Sessão inválida. Gerando novo QR...');
+                clearSession();
+                setTimeout(() => initWhatsAppBot(db, handlers), 3000);
+            } else {
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                console.log('Tentando reconectar:', shouldReconnect);
+                if (shouldReconnect) {
+                    setTimeout(() => initWhatsAppBot(db, handlers), 5000);
+                }
             }
         } else if (connection === 'open') {
             if (handlers.onConnected) handlers.onConnected();
-            console.log('Conexão com WhatsApp aberta com sucesso!');
+            console.log('✅ WhatsApp Conectado e pronto!');
         }
     });
 
