@@ -11,6 +11,12 @@ async function initTelegramBot(token, db) {
     const bot = new TelegramBot(token, { polling: true });
     const WHATSAPP_NUMBER = process.env.WHATSAPP_NUMBER || '5511999999999';
 
+    // Garantir que a pasta de figurinhas existe
+    const stickersDir = path.join(__dirname, 'stickers');
+    if (!fs.existsSync(stickersDir)) {
+        fs.mkdirSync(stickersDir, { recursive: true });
+    }
+
     console.log('Bot do Telegram iniciado...');
 
     bot.on('message', async (msg) => {
@@ -21,7 +27,7 @@ async function initTelegramBot(token, db) {
         const isSticker = msg.sticker;
 
         if (!isPhoto && !isVideo && !isSticker) {
-            return bot.sendMessage(chatId, 'Por favor, envie uma imagem, vídeo ou GIF para transformar em figurinha.');
+            return; // Ignorar mensagens que não são mídia
         }
 
         try {
@@ -44,8 +50,9 @@ async function initTelegramBot(token, db) {
             }
 
             const fileLink = await bot.getFileLink(fileId);
-            const tempInputPath = path.join(__dirname, 'stickers', `temp_${Date.now()}`);
-            const outputPath = path.join(__dirname, 'stickers', `${Date.now()}.webp`);
+            const timestamp = Date.now();
+            const tempInputPath = path.join(stickersDir, `temp_${timestamp}`);
+            const outputPath = path.join(stickersDir, `${timestamp}.webp`);
 
             // Download do arquivo
             const response = await fetch(fileLink);
@@ -71,26 +78,31 @@ async function initTelegramBot(token, db) {
                         ])
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', reject)
+                        .on('error', (err) => {
+                            console.error('Erro FFmpeg:', err);
+                            reject(err);
+                        })
                         .save(outputPath);
                 });
             } else {
-                // Usar Jimp para redimensionar e salvar como PNG temporário, depois converter para WebP via ffmpeg
-                // (Jimp não suporta WebP nativamente para escrita, mas ffmpeg sim)
                 const image = await Jimp.read(tempInputPath);
+                const pngPath = tempInputPath + '.png';
                 await image
                     .contain(512, 512)
-                    .writeAsync(tempInputPath + '.png');
+                    .writeAsync(pngPath);
 
                 await new Promise((resolve, reject) => {
-                    ffmpeg(tempInputPath + '.png')
+                    ffmpeg(pngPath)
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', reject)
+                        .on('error', (err) => {
+                            console.error('Erro FFmpeg (conversão webp):', err);
+                            reject(err);
+                        })
                         .save(outputPath);
                 });
                 
-                if (fs.existsSync(tempInputPath + '.png')) fs.unlinkSync(tempInputPath + '.png');
+                if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
             }
 
             const code = await saveSticker(db, outputPath);
@@ -100,8 +112,8 @@ async function initTelegramBot(token, db) {
             bot.sendMessage(chatId, `✅ Figurinha gerada!\n\nCódigo: *${code}*\n\nClique no link abaixo para resgatar no WhatsApp:\n${waLink}`, { parse_mode: 'Markdown' });
 
         } catch (error) {
-            console.error('Erro no Telegram Bot:', error);
-            bot.sendMessage(chatId, 'Ocorreu um erro ao processar seu arquivo.');
+            console.error('Erro detalhado no Telegram Bot:', error);
+            bot.sendMessage(chatId, `❌ Erro ao processar: ${error.message || 'Erro desconhecido'}`);
         }
     });
 
