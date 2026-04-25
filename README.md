@@ -38,7 +38,7 @@
     **Opção 2: Build Script Personalizado (Recomendado para Render):**
     No Render, você pode adicionar um `Build Command` que instala o FFmpeg. Vá em `Environment` -> `Build Command` e adicione:
     ```bash
-    apt-get update && apt-get install -y ffmpeg && npm install
+    npm install
     ```
     Isso garantirá que o FFmpeg esteja disponível antes do `npm install` e do `npm start`.
 
