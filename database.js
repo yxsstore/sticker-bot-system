@@ -1,23 +1,40 @@
-const sqlite3 = require('sqlite3');
-const { open } = require('sqlite');
+const loki = require('lokijs');
 const path = require('path');
+const fs = require('fs');
 
 async function setupDb() {
-    const db = await open({
-        filename: path.join(__dirname, 'data', 'database.sqlite'),
-        driver: sqlite3.Database
+    const dbPath = path.join(__dirname, 'data', 'database.json');
+    
+    // Garantir que a pasta data existe
+    if (!fs.existsSync(path.join(__dirname, 'data'))) {
+        fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+    }
+
+    const db = new loki(dbPath, {
+        autoload: true,
+        autoloadCallback: databaseInitialize,
+        autosave: true, 
+        autosaveInterval: 4000
     });
 
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS stickers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            file_path TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+    function databaseInitialize() {
+        let stickers = db.getCollection("stickers");
+        if (stickers === null) {
+            stickers = db.addCollection("stickers", { unique: ['code'] });
+        }
+    }
 
-    return db;
+    // Promisify o carregamento do banco
+    return new Promise((resolve) => {
+        const check = () => {
+            if (db.getCollection("stickers")) {
+                resolve(db);
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
 }
 
 function generateCode(length = 5) {
@@ -30,22 +47,24 @@ function generateCode(length = 5) {
 }
 
 async function saveSticker(db, filePath) {
+    const stickers = db.getCollection("stickers");
     let code;
     let exists = true;
     
-    // Garantir que o código seja único
     while (exists) {
         code = generateCode();
-        const row = await db.get('SELECT id FROM stickers WHERE code = ?', [code]);
+        const row = stickers.findOne({ code: code });
         if (!row) exists = false;
     }
 
-    await db.run('INSERT INTO stickers (code, file_path) VALUES (?, ?)', [code, filePath]);
+    stickers.insert({ code: code, file_path: filePath, created_at: new Date() });
+    db.saveDatabase();
     return code;
 }
 
 async function getStickerByCode(db, code) {
-    return await db.get('SELECT file_path FROM stickers WHERE code = ?', [code]);
+    const stickers = db.getCollection("stickers");
+    return stickers.findOne({ code: code });
 }
 
 module.exports = { setupDb, saveSticker, getStickerByCode };
