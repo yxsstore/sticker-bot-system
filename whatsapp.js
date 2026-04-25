@@ -1,11 +1,13 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const { getStickerByCode } = require('./database');
 
 async function initWhatsAppBot(db) {
+    // Importação dinâmica para contornar erro de ESM
+    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = await import('@whiskeysockets/baileys');
+    const { Boom } = await import('@hapi/boom');
+
     const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'data', 'auth_info_baileys'));
 
     const sock = makeWASocket({
@@ -27,7 +29,7 @@ async function initWhatsAppBot(db) {
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
                 lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            console.log('Conexão fechada devido a ', lastDisconnect.error, ', reconectando: ', shouldReconnect);
+            console.log('Conexão fechada, reconectando:', shouldReconnect);
             if (shouldReconnect) {
                 initWhatsAppBot(db);
             }
@@ -45,7 +47,6 @@ async function initWhatsAppBot(db) {
                      msg.message.extendedTextMessage?.text || 
                      '';
 
-        // Verificar se a mensagem é um código (5 caracteres, letras e números)
         const codeMatch = text.trim().toUpperCase().match(/^[A-Z0-9]{5}$/);
         
         if (codeMatch) {
