@@ -24,10 +24,10 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
                     .inputOptions(['-t', '6', '-err_detect', 'ignore_err'])
                     .outputOptions([
                         '-vcodec', 'libwebp',
-                        // Filtro para forçar 1:1 (quadrado) com preenchimento transparente
-                        '-vf', "scale='if(gt(iw,ih),512,-1)':'if(gt(iw,ih),-1,512)',pad=512:512:(512-iw)/2:(512-ih)/2:color=#00000000",
+                        // Para vídeo, usamos um redimensionamento que preenche melhor o quadrado (crop/scale)
+                        '-vf', "scale='if(gt(iw,ih),-1,512)':'if(gt(iw,ih),512,-1)',crop=512:512,setsar=1",
                         '-lossless', '0',
-                        '-q:v', '30',
+                        '-q:v', '35',
                         '-compression_level', '6',
                         '-loop', '0',
                         '-an',
@@ -45,7 +45,7 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
                 const smallPath = outputPath + '_small.webp';
                 await new Promise((resolve, reject) => {
                     ffmpeg(outputPath)
-                        .outputOptions(['-vcodec', 'libwebp', '-lossless', '0', '-q:v', '15', '-compression_level', '6'])
+                        .outputOptions(['-vcodec', 'libwebp', '-lossless', '0', '-q:v', '20', '-compression_level', '6'])
                         .toFormat('webp')
                         .on('end', resolve)
                         .on('error', reject)
@@ -57,14 +57,17 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
             const image = await Jimp.read(tempInputPath);
             const pngPath = tempInputPath + '.png';
             
-            // Forçar redimensionamento para quadrado perfeito 512x512
-            // O método 'contain' garante que a imagem caiba no quadrado sem distorcer, preenchendo o resto com transparência
-            image.contain({ w: 512, h: 512 });
+            // MUDANÇA AQUI: Usar 'cover' para preencher o quadrado todo e deixar a figurinha grande
+            image.cover({ w: 512, h: 512 });
             await image.write(pngPath);
 
             await new Promise((resolve, reject) => {
                 ffmpeg(pngPath)
-                    .outputOptions(['-vcodec', 'libwebp', '-lossless', '0', '-q:v', '75'])
+                    .outputOptions([
+                        '-vcodec', 'libwebp', 
+                        '-lossless', '1', // Lossless para fotos garante qualidade máxima
+                        '-q:v', '90'
+                    ])
                     .toFormat('webp')
                     .on('end', resolve)
                     .on('error', reject)
