@@ -47,18 +47,18 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
         if (isAnimated) {
             await new Promise((resolve, reject) => {
                 ffmpeg(tempInputPath)
-                    .inputOptions(['-t', '10']) // Suporte a até 10 segundos
+                    .inputOptions(['-t', '10'])
                     .outputOptions([
                         '-vcodec', 'libwebp',
-                        '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000',
+                        '-vf', "scale='if(gt(iw,ih),512,-1)':'if(gt(iw,ih),-1,512)',pad=512:512:(512-iw)/2:(512-ih)/2:color=#00000000",
                         '-lossless', '0',
-                        '-q:v', '40',
+                        '-q:v', '60', // Aumentado para melhor visibilidade
                         '-loop', '0',
                         '-preset', 'default',
                         '-an',
-                        '-vsync', '0'
+                        '-vsync', '0',
+                        '-f', 'webp'
                     ])
-                    .toFormat('webp')
                     .on('end', resolve)
                     .on('error', reject)
                     .save(outputPath);
@@ -66,12 +66,19 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
         } else {
             const image = await Jimp.read(tempInputPath);
             const pngPath = tempInputPath + '.png';
+            
+            // Redimensionar mantendo proporção e garantindo fundo transparente
             image.contain({ w: 512, h: 512 });
             await image.write(pngPath);
 
             await new Promise((resolve, reject) => {
                 ffmpeg(pngPath)
-                    .toFormat('webp')
+                    .outputOptions([
+                        '-vcodec', 'libwebp',
+                        '-lossless', '1', // Lossless para imagens estáticas garante que não fiquem invisíveis
+                        '-q:v', '80',
+                        '-f', 'webp'
+                    ])
                     .on('end', resolve)
                     .on('error', reject)
                     .save(outputPath);
@@ -80,11 +87,13 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
             if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
         }
 
+        // Adicionar metadados após a conversão
         await addMetadata(outputPath);
         
         if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
         return outputPath;
     } catch (error) {
+        console.error('Erro no processamento de mídia:', error);
         if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
         throw error;
     }
