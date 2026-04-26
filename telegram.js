@@ -1,5 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
-const Jimp = require('jimp');
+const { Jimp } = require('jimp');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -11,7 +11,6 @@ async function initTelegramBot(token, db) {
     const bot = new TelegramBot(token, { polling: true });
     const WHATSAPP_NUMBER = process.env.WHATSAPP_NUMBER || '5511999999999';
 
-    // Garantir que a pasta de figurinhas existe
     const stickersDir = path.join(__dirname, 'stickers');
     if (!fs.existsSync(stickersDir)) {
         fs.mkdirSync(stickersDir, { recursive: true });
@@ -26,9 +25,7 @@ async function initTelegramBot(token, db) {
         const isVideo = msg.video || msg.animation;
         const isSticker = msg.sticker;
 
-        if (!isPhoto && !isVideo && !isSticker) {
-            return; // Ignorar mensagens que não são mídia
-        }
+        if (!isPhoto && !isVideo && !isSticker) return;
 
         try {
             bot.sendMessage(chatId, 'Processando sua figurinha... ⏳');
@@ -54,7 +51,6 @@ async function initTelegramBot(token, db) {
             const tempInputPath = path.join(stickersDir, `temp_${timestamp}`);
             const outputPath = path.join(stickersDir, `${timestamp}.webp`);
 
-            // Download do arquivo
             const response = await fetch(fileLink);
             const buffer = await response.arrayBuffer();
             fs.writeFileSync(tempInputPath, Buffer.from(buffer));
@@ -78,27 +74,23 @@ async function initTelegramBot(token, db) {
                         ])
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', (err) => {
-                            console.error('Erro FFmpeg:', err);
-                            reject(err);
-                        })
+                        .on('error', reject)
                         .save(outputPath);
                 });
             } else {
+                // Correção da sintaxe do Jimp
                 const image = await Jimp.read(tempInputPath);
                 const pngPath = tempInputPath + '.png';
-                await image
-                    .contain(512, 512)
-                    .writeAsync(pngPath);
+                
+                // Redimensionar mantendo proporção e preenchendo fundo transparente
+                image.contain({ w: 512, h: 512 });
+                await image.write(pngPath);
 
                 await new Promise((resolve, reject) => {
                     ffmpeg(pngPath)
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', (err) => {
-                            console.error('Erro FFmpeg (conversão webp):', err);
-                            reject(err);
-                        })
+                        .on('error', reject)
                         .save(outputPath);
                 });
                 
@@ -112,8 +104,8 @@ async function initTelegramBot(token, db) {
             bot.sendMessage(chatId, `✅ Figurinha gerada!\n\nCódigo: *${code}*\n\nClique no link abaixo para resgatar no WhatsApp:\n${waLink}`, { parse_mode: 'Markdown' });
 
         } catch (error) {
-            console.error('Erro detalhado no Telegram Bot:', error);
-            bot.sendMessage(chatId, `❌ Erro ao processar: ${error.message || 'Erro desconhecido'}`);
+            console.error('Erro no Telegram Bot:', error);
+            bot.sendMessage(chatId, `❌ Erro ao processar: ${error.message}`);
         }
     });
 
