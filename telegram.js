@@ -58,31 +58,29 @@ async function initTelegramBot(token, db) {
             if (isAnimated) {
                 await new Promise((resolve, reject) => {
                     ffmpeg(tempInputPath)
-                        .size('512x512')
-                        .aspect('1:1')
-                        .fps(15)
-                        .duration(5)
+                        .inputOptions(['-t', '5']) // Limitar entrada a 5 segundos
                         .outputOptions([
                             '-vcodec', 'libwebp',
+                            '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000',
                             '-lossless', '0',
-                            '-compression_level', '6',
-                            '-q:v', '50',
+                            '-q:v', '40',
                             '-loop', '0',
-                            '-preset', 'picture',
+                            '-preset', 'default',
                             '-an',
                             '-vsync', '0'
                         ])
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', reject)
+                        .on('error', (err) => {
+                            console.error('Erro FFmpeg Animado:', err);
+                            reject(err);
+                        })
                         .save(outputPath);
                 });
             } else {
-                // Correção da sintaxe do Jimp
                 const image = await Jimp.read(tempInputPath);
                 const pngPath = tempInputPath + '.png';
                 
-                // Redimensionar mantendo proporção e preenchendo fundo transparente
                 image.contain({ w: 512, h: 512 });
                 await image.write(pngPath);
 
@@ -90,7 +88,10 @@ async function initTelegramBot(token, db) {
                     ffmpeg(pngPath)
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', reject)
+                        .on('error', (err) => {
+                            console.error('Erro FFmpeg Estático:', err);
+                            reject(err);
+                        })
                         .save(outputPath);
                 });
                 
