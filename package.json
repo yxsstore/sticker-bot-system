@@ -21,6 +21,7 @@
     "jimp": "^1.6.1",
     "lokijs": "^1.5.12",
     "node-telegram-bot-api": "^0.67.0",
+    "node-webpmux": "^3.2.1",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0"
   }

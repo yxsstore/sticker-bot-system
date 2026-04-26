@@ -6,6 +6,29 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const path = require('path');
 const fs = require('fs');
 const { saveSticker } = require('./database');
+const webpmux = require('node-webpmux');
+
+async function addMetadata(imagePath, packname = 'StickerBot', author = 'YXS Store') {
+    const img = new webpmux.Image();
+    await img.load(imagePath);
+    
+    const exif = {
+        "sticker-pack-id": "com.yxsstore.stickerbot",
+        "sticker-pack-name": packname,
+        "sticker-pack-publisher": author,
+        "emojis": ["✅"]
+    };
+
+    const exifHeader = Buffer.from([0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);
+    const jsonPayload = Buffer.from(JSON.stringify(exif), 'utf-8');
+    const exifData = Buffer.concat([exifHeader, jsonPayload]);
+    
+    // Ajustar o tamanho no header EXIF
+    exifData.writeUInt32LE(jsonPayload.length, 18);
+    
+    img.exif = exifData;
+    await img.save(imagePath);
+}
 
 async function initTelegramBot(token, db) {
     const bot = new TelegramBot(token, { polling: true });
@@ -58,7 +81,7 @@ async function initTelegramBot(token, db) {
             if (isAnimated) {
                 await new Promise((resolve, reject) => {
                     ffmpeg(tempInputPath)
-                        .inputOptions(['-t', '5']) // Limitar entrada a 5 segundos
+                        .inputOptions(['-t', '5'])
                         .outputOptions([
                             '-vcodec', 'libwebp',
                             '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000',
@@ -71,16 +94,12 @@ async function initTelegramBot(token, db) {
                         ])
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', (err) => {
-                            console.error('Erro FFmpeg Animado:', err);
-                            reject(err);
-                        })
+                        .on('error', reject)
                         .save(outputPath);
                 });
             } else {
                 const image = await Jimp.read(tempInputPath);
                 const pngPath = tempInputPath + '.png';
-                
                 image.contain({ w: 512, h: 512 });
                 await image.write(pngPath);
 
@@ -88,14 +107,18 @@ async function initTelegramBot(token, db) {
                     ffmpeg(pngPath)
                         .toFormat('webp')
                         .on('end', resolve)
-                        .on('error', (err) => {
-                            console.error('Erro FFmpeg Estático:', err);
-                            reject(err);
-                        })
+                        .on('error', reject)
                         .save(outputPath);
                 });
                 
                 if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
+            }
+
+            // Adicionar Metadados (Pack e Autor)
+            try {
+                await addMetadata(outputPath, 'StickerBot Pack', 'YXS Store');
+            } catch (metaErr) {
+                console.error('Erro ao adicionar metadados:', metaErr);
             }
 
             const code = await saveSticker(db, outputPath);
