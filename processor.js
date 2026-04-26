@@ -21,27 +21,22 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
         if (isAnimated) {
             await new Promise((resolve, reject) => {
                 ffmpeg(tempInputPath)
-                    .inputOptions([
-                        '-t', '6',
-                        '-err_detect', 'ignore_err' // Ignorar erros menores no arquivo de entrada
-                    ])
+                    .inputOptions(['-t', '6', '-err_detect', 'ignore_err'])
                     .outputOptions([
                         '-vcodec', 'libwebp',
-                        '-vf', "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000",
+                        // Filtro para forçar 1:1 (quadrado) com preenchimento transparente
+                        '-vf', "scale='if(gt(iw,ih),512,-1)':'if(gt(iw,ih),-1,512)',pad=512:512:(512-iw)/2:(512-ih)/2:color=#00000000",
                         '-lossless', '0',
                         '-q:v', '30',
                         '-compression_level', '6',
                         '-loop', '0',
                         '-an',
                         '-vsync', '0',
-                        '-pix_fmt', 'yuva420p' // Garantir suporte a transparência
+                        '-pix_fmt', 'yuva420p'
                     ])
                     .toFormat('webp')
                     .on('end', resolve)
-                    .on('error', (err) => {
-                        console.error('Erro FFmpeg detalhado:', err);
-                        reject(err);
-                    })
+                    .on('error', reject)
                     .save(outputPath);
             });
 
@@ -50,12 +45,7 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
                 const smallPath = outputPath + '_small.webp';
                 await new Promise((resolve, reject) => {
                     ffmpeg(outputPath)
-                        .outputOptions([
-                            '-vcodec', 'libwebp',
-                            '-lossless', '0',
-                            '-q:v', '15',
-                            '-compression_level', '6'
-                        ])
+                        .outputOptions(['-vcodec', 'libwebp', '-lossless', '0', '-q:v', '15', '-compression_level', '6'])
                         .toFormat('webp')
                         .on('end', resolve)
                         .on('error', reject)
@@ -66,16 +56,15 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
         } else {
             const image = await Jimp.read(tempInputPath);
             const pngPath = tempInputPath + '.png';
+            
+            // Forçar redimensionamento para quadrado perfeito 512x512
+            // O método 'contain' garante que a imagem caiba no quadrado sem distorcer, preenchendo o resto com transparência
             image.contain({ w: 512, h: 512 });
             await image.write(pngPath);
 
             await new Promise((resolve, reject) => {
                 ffmpeg(pngPath)
-                    .outputOptions([
-                        '-vcodec', 'libwebp',
-                        '-lossless', '0',
-                        '-q:v', '75'
-                    ])
+                    .outputOptions(['-vcodec', 'libwebp', '-lossless', '0', '-q:v', '75'])
                     .toFormat('webp')
                     .on('end', resolve)
                     .on('error', reject)
