@@ -21,41 +21,47 @@ async function processMediaToSticker(inputBuffer, isAnimated) {
         if (isAnimated) {
             await new Promise((resolve, reject) => {
                 ffmpeg(tempInputPath)
-                    .inputOptions(['-t', '6']) // Reduzido para 6 segundos para garantir tamanho < 1MB
+                    .inputOptions([
+                        '-t', '6',
+                        '-err_detect', 'ignore_err' // Ignorar erros menores no arquivo de entrada
+                    ])
                     .outputOptions([
                         '-vcodec', 'libwebp',
                         '-vf', "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000",
                         '-lossless', '0',
-                        '-q:v', '30', // Qualidade reduzida para garantir que fique abaixo de 1MB
+                        '-q:v', '30',
                         '-compression_level', '6',
                         '-loop', '0',
                         '-an',
-                        '-vsync', '0'
+                        '-vsync', '0',
+                        '-pix_fmt', 'yuva420p' // Garantir suporte a transparência
                     ])
                     .toFormat('webp')
                     .on('end', resolve)
-                    .on('error', reject)
+                    .on('error', (err) => {
+                        console.error('Erro FFmpeg detalhado:', err);
+                        reject(err);
+                    })
                     .save(outputPath);
             });
 
-            // Verificação de tamanho (WhatsApp limita a 1MB)
             const stats = fs.statSync(outputPath);
             if (stats.size > 1000000) {
-                console.log('Figurinha muito grande, tentando compressão extra...');
+                const smallPath = outputPath + '_small.webp';
                 await new Promise((resolve, reject) => {
                     ffmpeg(outputPath)
                         .outputOptions([
                             '-vcodec', 'libwebp',
                             '-lossless', '0',
-                            '-q:v', '15', // Compressão extrema se ainda estiver grande
+                            '-q:v', '15',
                             '-compression_level', '6'
                         ])
                         .toFormat('webp')
                         .on('end', resolve)
                         .on('error', reject)
-                        .save(outputPath + '_small.webp');
+                        .save(smallPath);
                 });
-                fs.renameSync(outputPath + '_small.webp', outputPath);
+                fs.renameSync(smallPath, outputPath);
             }
         } else {
             const image = await Jimp.read(tempInputPath);
